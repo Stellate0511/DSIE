@@ -288,11 +288,13 @@ function saveState() {
 
 // 鼠标绘制事件
 overlayCanvas.addEventListener('mousedown', e => {
-    saveState(); // 每次开始画之前存一次
+    saveState();
     isDrawing = true;
     const rect = overlayCanvas.getBoundingClientRect();
     lastX = e.clientX - rect.left;
     lastY = e.clientY - rect.top;
+    
+    drawLine(lastX, lastY);
 });
 overlayCanvas.addEventListener('mousemove', e => {
     if (!isDrawing) return;
@@ -300,6 +302,39 @@ overlayCanvas.addEventListener('mousemove', e => {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    drawLine(x, y);
+});
+overlayCanvas.addEventListener('mouseup', () => isDrawing = false);
+overlayCanvas.addEventListener('mouseleave', () => isDrawing = false);
+
+// 触控绘制事件
+overlayCanvas.addEventListener('touchstart', e => {
+    e.preventDefault(); // 阻止页面滚动
+    saveState();
+    isDrawing = true;
+    const rect = overlayCanvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    lastX = touch.clientX - rect.left;
+    lastY = touch.clientY - rect.top;
+    
+    drawLine(lastX, lastY);
+}, { passive: false });
+
+overlayCanvas.addEventListener('touchmove', e => {
+    if (!isDrawing) return;
+    e.preventDefault(); // 阻止页面滚动
+    const rect = overlayCanvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+
+    drawLine(x, y);
+}, { passive: false });
+
+overlayCanvas.addEventListener('touchend', () => isDrawing = false);
+overlayCanvas.addEventListener('touchcancel', () => isDrawing = false);
+
+function drawLine(x, y) {
     overlayCtx.strokeStyle = brushColor;
     overlayCtx.lineWidth = brushSize;
     overlayCtx.lineCap = 'round';
@@ -312,9 +347,7 @@ overlayCanvas.addEventListener('mousemove', e => {
 
     lastX = x;
     lastY = y;
-});
-overlayCanvas.addEventListener('mouseup', () => isDrawing = false);
-overlayCanvas.addEventListener('mouseleave', () => isDrawing = false);
+}
 
 // 清空按钮
 document.getElementById('clearOverlayBtn').onclick = () => {
@@ -361,8 +394,7 @@ document.getElementById('brushColorPicker').addEventListener('input', e => {
     applyCurrentBrushColor();
 });
 
-
-
+    
 document.getElementById('chooseBtn').onclick = () => document.getElementById('fileInput').click();
 document.getElementById('fileInput').onchange = e => { if (e.target.files[0]) loadImageEncode(e.target.files[0]); };
 
@@ -431,6 +463,9 @@ function loadImageEncode(file) {
             refImageData = null;
             ctxRef.clearRect(0, 0, previewRef.width, previewRef.height);
             document.getElementById('useGuided').checked = false;
+            
+            saveState();
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
         };
         img.src = ev.target.result;
     };
@@ -805,3 +840,4 @@ function saveImage(pixels, w, h, filename, format) {
 
 </body>
 </html>
+
