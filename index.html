@@ -712,7 +712,7 @@ function runEncode(imgData, baseName, threads, format) {
                     saveImage(resultA, w, h, baseName + "_A_diff." + (format === "jpeg" ? "jpg" : format), format);
                     saveImage(resultB, w, h, baseName + "_B_diff." + (format === "jpeg" ? "jpg" : format), format);
                     setProcessingState('startBtn', false, "开始加密");
-                    alert(`生成成功：\n${baseName}_A_diff.${format === "jpeg" ? "jpg" : format}\n${baseName}_B_diff.${format === "jpeg" ? "jpg" : format}`);
+                    alert(`生成成功：\n${baseName}_A_diff.${format === "jpeg" ? "jpg" : format}\n${baseName}_B_diff.${format === "jpeg" ? "jpg" : format}\n\n要还原原图，请在 Photoshop 等程序中将两张图片导入为两张图层（无论上下），并将在上面那张设置为“差值（Difference）”模式。`);
                 }
             }
         };
@@ -840,4 +840,5 @@ function saveImage(pixels, w, h, filename, format) {
 
 </body>
 </html>
+
 
