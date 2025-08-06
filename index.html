@@ -81,7 +81,7 @@ progress {
     <div style="text-align:center; margin-top:5px;">
         <label style="margin-right:15px;">
             画笔大小:
-            <input id="brushSizeSlider" type="range" min="2" max="100" value="12">
+            <input id="brushSizeSlider" type="range" min="2" max="100" value="30">
         </label>
         <label>
             画笔颜色:
@@ -268,7 +268,7 @@ const overlayCanvas = document.getElementById('drawOverlay');
 const overlayCtx = overlayCanvas.getContext('2d');
 let isDrawing = false;
 let lastX = 0, lastY = 0;
-let brushSize = 12;
+let brushSize = 30;
 let brushColor = 'rgb(0,0,0)';
 
 // 撤回历史栈
@@ -840,5 +840,3 @@ function saveImage(pixels, w, h, filename, format) {
 
 </body>
 </html>
-
-
