@@ -112,7 +112,14 @@ progress {
             <option value="png" selected>PNG</option>
             <option value="jpeg">JPG</option>
         </select>
-        <button class="btn" id="startBtn" style="margin-left:10px;">开始加密</button>
+        <label>
+          <input type="checkbox" id="mergeSideBySide">
+          左右拼接为单图
+        </label>
+    </div>
+    
+    <div class="controls" style="margin-top:15px;">
+        <button class="btn" id="startBtn">开始加密</button>
     </div>
 
     <!-- 进度条 -->
@@ -133,6 +140,9 @@ progress {
         <input type="file" id="decodeInputB" accept="image/*" style="display:none;">
         <button class="btn" id="chooseDecodeB">选择第二张图片</button>
     </div>
+    
+    
+    <div style="text-align:center;font-size:12px;color:#555;margin-top:10px">如果只上传一张将会尝试左右拆分为两张解密</div>
     
     <div class="controls">
         <select id="threadSelectDecode"></select>
@@ -708,12 +718,60 @@ function runEncode(imgData, baseName, threads, format) {
                 processedRows[t] = endY - startY;
                 workersDone++;
                 if (workersDone === threads) {
+                    console.log("w:", w, "h:", h);
+                    console.log("resultA.length:", resultA.length, "expected:", w * h * 4);
+                    console.log("resultB.length:", resultB.length, "expected:", w * h * 4);
+
                     progressBar.value = 100;
-                    saveImage(resultA, w, h, baseName + "_A_diff." + (format === "jpeg" ? "jpg" : format), format);
-                    saveImage(resultB, w, h, baseName + "_B_diff." + (format === "jpeg" ? "jpg" : format), format);
-                    setProcessingState('startBtn', false, "开始加密");
-                    alert(`生成成功：\n${baseName}_A_diff.${format === "jpeg" ? "jpg" : format}\n${baseName}_B_diff.${format === "jpeg" ? "jpg" : format}\n\n要还原原图，请在 Photoshop 等程序中将两张图片导入为两张图层（无论上下），并将在上面那张设置为“差值（Difference）”模式。`);
+                
+                    const formatExt = format === "jpeg" ? "jpg" : format;
+                    const checkbox = document.getElementById('mergeSideBySide');
+                
+                    if (checkbox.checked) {
+                        // 拼接为单图导出
+                        let mergedWidth = w * 2;
+                        let mergedHeight = h;
+                        let mergedPixels = new Uint8ClampedArray(mergedWidth * mergedHeight * 4);
+                
+                        // 把 resultA 拷贝到左边
+                        for (let y = 0; y < h; y++) {
+                            for (let x = 0; x < w; x++) {
+                                const srcIdx = (y * w + x) * 4;
+                                const dstIdx = (y * mergedWidth + x) * 4;
+                                mergedPixels[dstIdx]     = resultA[srcIdx];
+                                mergedPixels[dstIdx + 1] = resultA[srcIdx + 1];
+                                mergedPixels[dstIdx + 2] = resultA[srcIdx + 2];
+                                mergedPixels[dstIdx + 3] = resultA[srcIdx + 3];
+                            }
+                        }
+                
+                        // 把 resultB 拷贝到右边
+                        for (let y = 0; y < h; y++) {
+                            for (let x = 0; x < w; x++) {
+                                const srcIdx = (y * w + x) * 4;
+                                const dstIdx = (y * mergedWidth + (x + w)) * 4;
+                                mergedPixels[dstIdx]     = resultB[srcIdx];
+                                mergedPixels[dstIdx + 1] = resultB[srcIdx + 1];
+                                mergedPixels[dstIdx + 2] = resultB[srcIdx + 2];
+                                mergedPixels[dstIdx + 3] = resultB[srcIdx + 3];
+                            }
+                        }
+                
+                        // 使用已有 saveImage 函数导出
+                        saveImage(mergedPixels, mergedWidth, mergedHeight, baseName + "_diff." + formatExt, format);
+                
+                        setProcessingState('startBtn', false, "开始加密");
+                        alert(`生成成功：\n${baseName}_diff.${formatExt}\n\n要还原原图，请在 Photoshop 等程序中将图片左右分割为两个相等的图层（不完全相等也能还原，只是边上会是乱码），将在上面那张设置为“差值（Difference）”模式，移动至完全重叠或能清晰看到原图。`);
+                    } else {
+                        // 分别导出 A 和 B
+                        saveImage(resultA, w, h, baseName + "_A_diff." + formatExt, format);
+                        saveImage(resultB, w, h, baseName + "_B_diff." + formatExt, format);
+                
+                        setProcessingState('startBtn', false, "开始加密");
+                        alert(`生成成功：\n${baseName}_A_diff.${formatExt}\n${baseName}_B_diff.${formatExt}\n\n要还原原图，请在 Photoshop 等程序中将两张图片导入为两张图层（无论上下），并将在上面那张设置为“差值（Difference）”模式。`);
+                    }
                 }
+
             }
         };
         worker.postMessage({
@@ -779,15 +837,54 @@ const decodeWorkerCode = `onmessage = function(e) {
     postMessage({ done: true, out, startY, endY });
 }`;
 
+function splitImageData(imageData, leftSide = true) {
+    const { width, height, data } = imageData;
+    const halfWidth = Math.floor(width / 2);
+    const result = new Uint8ClampedArray(halfWidth * height * 4);
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < halfWidth; x++) {
+            const srcX = leftSide ? x : x + halfWidth;
+            const srcIdx = (y * width + srcX) * 4;
+            const dstIdx = (y * halfWidth + x) * 4;
+            result[dstIdx] = data[srcIdx];
+            result[dstIdx + 1] = data[srcIdx + 1];
+            result[dstIdx + 2] = data[srcIdx + 2];
+            result[dstIdx + 3] = data[srcIdx + 3];
+        }
+    }
+
+    return new ImageData(result, halfWidth, height);
+}
+
 document.getElementById('startDecode').onclick = () => {
-    if (!imgA || !imgB) return alert("请先选择两张图片");
-    
+    if (!imgA && !imgB) {
+        return alert("请至少选择一张图片");
+    }
+
+    let inputA = imgA;
+    let inputB = imgB;
+
+    // 如果只有一张图，使用左右拆分
+    if (imgA && !imgB) {
+        inputA = splitImageData(imgA, true);
+        inputB = splitImageData(imgA, false);
+    } else if (!imgA && imgB) {
+        inputA = splitImageData(imgB, true);
+        inputB = splitImageData(imgB, false);
+    }
+
     setProcessingState('startDecode', true, "开始解密");
     const progressBar = document.getElementById('progressDecode');
-    progressBar.value = 0; 
-    progressBar.offsetWidth; 
+    progressBar.value = 0;
+    progressBar.offsetWidth;
 
-    runDecode(imgA, imgB, parseInt(document.getElementById('threadSelectDecode').value), document.getElementById('formatSelectDecode').value);
+    runDecode(
+        inputA,
+        inputB,
+        parseInt(document.getElementById('threadSelectDecode').value),
+        document.getElementById('formatSelectDecode').value
+    );
 };
 
 function runDecode(imgA, imgB, threads, format) {
