@@ -1,1221 +1,939 @@
 <!DOCTYPE html>
 <html lang="zh">
-
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8">
+<title>差值分离图像加密/解密工具</title>
+<style>
+    body { font-family: "Segoe UI", sans-serif; background: #f8f8f8; margin: 0; padding: 0; text-align: center; }
+    #tabs { background: #333; color: #fff; display: flex; justify-content: center; }
+    #tabs button { flex: 1; padding: 10px; cursor: pointer; border: none; background: #444; color: #fff; font-size: 16px; }
+    #tabs button.active { background: #0078d7; }
+    .page { display: none; padding: 10px; }
+    .page.active { display: block; }
+    canvas {
+    border: 2px dashed #aaa;
+    margin: 10px auto;
+    display: block;
+    background: #fff;
+    /* width: 100%;  <-- 删除 */
+    height: auto;
+    max-width: 500px;   /* PC 上最大宽度 */
+}
 
-    <title>图灵箱</title>
+progress {
+    width: 100%;
+    max-width: 500px;   /* PC 上最大宽度 */
+}
 
-    <!-- 外部依赖 -->
-    <script src="https://cdn.jsdelivr.net/npm/fflate"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+@media (max-width: 600px) {
+    .controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    .btn, select {
+        width: 100%;
+        font-size: 16px;
+        padding: 10px;
+    }
+    canvas, progress {
+        max-width: 100%; /* 手机上取消限制，铺满宽度 */
+    }
+}
 
-    <style>
-        body {
-            font-family: "Segoe UI", sans-serif;
-            background-color: #f7f9fc;
-            margin: 0;
-            color: #333;
-        }
-
-        header {
-            background-color: #1976d2;
-            color: white;
-            text-align: center;
-            padding: 1em;
-        }
-
-        #status {
-            margin-top: 0.5em;
-            font-size: 0.9em;
-        }
-
-        nav {
-            background-color: #e3f2fd;
-            display: flex;
-            justify-content: center;
-            padding: 10px;
-        }
-
-        nav button {
-            margin: 0 10px;
-            padding: 10px 20px;
-            font-size: 1em;
-            color: #1976d2;
-            background-color: white;
-            border: 1px solid #90caf9;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        nav button:hover {
-            background-color: #e0ecff;
-        }
-
-        /* 激活样式 */
-        #embedTab.active,
-        #extractTab.active {
-            background-color: #1976d2;
-            color: white;
-            border-color: #1976d2;
-            box-shadow: 0 0 4px #1976d280;
-        }
-
-        .tab {
-            display: none;
-            padding: 30px 20px;
-            max-width: 600px;
-            margin: 0 auto;
-        }
-
-        .tab.active {
-            display: block;
-        }
-
-        section h2 {
-            text-align: center;
-            color: #1976d2;
-        }
-
-        .form-group {
-            margin: 15px 0;
-            text-align: center;
-        }
-
-        .form-group input,
-        .form-group textarea,
-        .form-group button,
-        .form-group label {
-            font-size: 1em;
-            margin: 5px auto;
-        }
-
-        .inline {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            justify-content: center;
-        }
-
-        canvas {
-            max-width: 90%;
-            width: 300px;
-            height: auto;
-            display: block;
-            margin: 20px auto;
-            border: 1px solid #ccc;
-        }
-
-        footer {
-            background-color: #f1f1f1;
-            text-align: center;
-            padding: 10px;
-            font-size: 0.9em;
-            color: #777;
-        }
-
-        .file-label {
-            display: inline-block;
-            background-color: #1976d2;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-        }
-
-        .file-label:hover {
-            background-color: #125ba6;
-        }
-
-        #filesInputName,
-        #previewImageName {
-            margin-top: 5px;
-            font-size: 0.9em;
-            color: #666;
-            text-align: center;
-        }
-    </style>
+    .controls { margin-top: 10px; display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+    .btn { padding: 6px 12px; font-size: 14px; cursor: pointer; }
+    select { padding: 4px; }
+    #footer { color: #666; font-size: 12px; margin-top: 5px; }
+    @media (max-width: 600px) {
+        .controls { flex-direction: column; align-items: center; }
+        #tabs button { font-size: 14px; }
+    }
+</style>
 </head>
-
 <body>
-    <header>
-        <h1>图灵箱</h1>
-        <h3 style="margin-top:-20px">QRepository</h3>
-        <div id="status">⏳ 正在加载依赖库，请稍候…</div>
-    </header>
 
-    <nav>
-        <button id="extractTab" class="active" onclick="switchTab('decoder')">📥 文件提取</button>
-        <button id="embedTab" onclick="switchTab('encoder')">🔐 文件嵌入</button>
-    </nav>
+<div id="tabs">
+    <button id="tabEncode" class="active">加密</button>
+    <button id="tabDecode">解密</button>
+</div>
 
-    <!-- 解码页（默认） -->
-    <section id="decoder" class="tab active">
-        <h2>📥 文件提取</h2>
+<!-- 编码页 -->
+<div id="pageEncode" class="page active">
+    <h2>差值分离图像加密</h2>
 
-        <div class="form-group">
-            <label for="imageInput" class="file-label">🖼️ 选择二维码图像</label>
-            <input type="file" id="imageInput" accept="image/*" style="display:none;" />
-            <div id="imageInputName">未选择任何图片</div>
-        </div>
+    <!-- 目标图预览 -->
+    <div style="position: relative; display: inline-block;">
+        <canvas id="previewEncode" width="400" height="260"></canvas>
+        <canvas id="drawOverlay" width="400" height="260"
+            style="position:absolute; left:0; top:0; pointer-events:auto; background:transparent;"></canvas>
+    </div>
 
-        <div class="form-group">
-            <button id="decodeButton">提取文件</button>
-        </div>
+    <!-- 目标图控件区 -->
+    <div style="text-align:center;font-size:12px;color:#555;">目标图预览（在上方涂抹以指定加密部分）</div>
+    <div style="text-align:center; margin-top:10px;">
+        <button class="btn" id="chooseBtn">选择目标图片</button>
+        <button id="undoOverlayBtn" class="btn" style="margin-left:10px;">撤回涂抹</button>
+        <button id="clearOverlayBtn" class="btn">清空涂抹</button>
+    </div>
+    
+    <!-- 画笔控件区 -->
+    <div style="text-align:center; margin-top:5px;">
+        <label style="margin-right:15px;">
+            画笔大小:
+            <input id="brushSizeSlider" type="range" min="2" max="100" value="30">
+        </label>
+        <label>
+            画笔颜色:
+            <input id="brushColorPicker" type="color" value="#000000">
+        </label>
+    </div>
 
-        <!-- 解码页进度条 -->
-        <div id="decodeProgressWrap" style="display:none; max-width:600px; margin:8px auto;">
-                <div id="decodeProgressText" style="text-align:center; font-size:0.9em; margin-bottom:6px;">准备中…</div>
-                <div style="height:10px; background:#eee; border-radius:6px; overflow:hidden;">
-                    <div id="decodeProgressBar" style="height:10px; width:0%; background:#1976d2;"></div>
-                </div>
-        </div>
+    <!-- 参考图预览 -->
+    <div style="margin-top:10px; position: relative; display: inline-block;">
+        <canvas id="previewRef" width="400" height="260"></canvas>
+        <div style="text-align:center;font-size:12px;color:#555;">参考图预览（可选）</div>
+    </div>
 
-        <div id="fileList" class="form-group"></div>
-    </section>
+    <!-- 参考图控件区 -->
+    <div class="controls" style="margin-top:10px;">
+        <input type="file" id="refInput" accept="image/*" style="display:none;">
+        <button class="btn" id="chooseRefBtn">选择参考图</button>
+        <label style="display:flex;align-items:center;gap:4px;">
+            <input type="checkbox" id="useGuided"> 启用
+        </label>
+    </div>
 
-    <!-- 编码页 -->
-    <section id="encoder" class="tab">
-        <h2>🔐 文件嵌入</h2>
+    <!-- 其余控件区 -->
+    <div class="controls" style="margin-top:15px;">
+        <input type="file" id="fileInput" accept="image/*" style="display:none;">
+        <select id="threadSelectEncode"></select>
+        <select id="formatSelectEncode">
+            <option value="png" selected>PNG</option>
+            <option value="jpeg">JPG</option>
+        </select>
+        <label>
+          <input type="checkbox" id="mergeSideBySide">
+          左右拼接为单图
+        </label>
+    </div>
+    
+    <div class="controls" style="margin-top:15px;">
+        <button class="btn" id="startBtn">开始加密</button>
+    </div>
 
-        <div class="form-group">
-            <label for="filesInput" class="file-label">📁 选择要嵌入的文件</label>
-            <input type="file" id="filesInput" multiple style="display:none;" />
-            <div id="filesInputName">未选择任何文件</div>
-        </div>
+    <!-- 进度条 -->
+    <progress id="progressEncode" value="0" max="100" style="margin-top:15px;"></progress>
+</div>
 
-        <div class="form-group">
-            <label for="qrLinkSelect">嵌入二维码链接：</label>
-            <select id="qrLinkSelect">
-                <option value="https://s2js.com/Stellate/QRepository" selected>S2JS 页面</option>
-                <option value="https://stellate0511.github.io/QRepository/">Github 页面</option>
-            </select>
-        </div>
+<!-- 解密页 -->
+<div id="pageDecode" class="page">
+    <h2>差值分离图像解密</h2>
+    <div style="position: relative; display: inline-block;">
+        <canvas id="previewDecodeA" width="200" height="150"></canvas>
+        <input type="file" id="decodeInputA" accept="image/*" style="display:none;">
+        <button class="btn" id="chooseDecodeA">选择第一张图片</button>
+    </div>
+    
+    <div style="margin-left:10px; position: relative; display: inline-block;">
+        <canvas id="previewDecodeB" width="200" height="150"></canvas>
+        <input type="file" id="decodeInputB" accept="image/*" style="display:none;">
+        <button class="btn" id="chooseDecodeB">选择第二张图片</button>
+    </div>
+    
+    
+    <div style="text-align:center;font-size:12px;color:#555;margin-top:10px">如果只上传一张将会尝试左右拆分为两张解密</div>
+    
+    <div class="controls">
+        <select id="threadSelectDecode"></select>
+        <select id="formatSelectDecode">
+            <option value="png" selected>PNG</option>
+            <option value="jpeg">JPG</option>
+        </select>
+        <button class="btn" id="startDecode" style="margin-left:10px;">开始解密</button>
+    </div>
+    <progress id="progressDecode" value="0" max="100" style="width: 400px; margin-top:10px;"></progress>
+</div>
 
+<div style="margin-top: 40px; font-size: 14px; color: #666;">
+  本工具可将任意图片加密为两张图像，分别导入图层后在 Photoshop 等软件中使用“差值（Difference）”混合模式可还原原图。<br>
+  支持参考图控制加密视觉效果，也可在目标图上<strong>涂抹</strong>指定区域，使该区域加密更安全，防止推测原图。<br>
+  若未启用参考图，也未进行涂抹，将默认使用最高安全性的极值算法进行加密。
+</div>
+<div id="footer">© 点缀星空 2025</div>
 
-        <div class="form-group">
-            <label for="embedMode">嵌入策略：</label>
-            <select id="embedMode">
-                <option value="pair41" selected>最小（二维码有略明显波动）</option>
-                <option value="byte7">最隐蔽（二维码会大一圈）</option>
-            </select>
-        </div>
+<script>
+let refImageData = null;
+const previewRef = document.getElementById('previewRef');
+const ctxRef = previewRef.getContext('2d');
 
-        <div class="form-group">
-            <input type="checkbox" id="convertToJpg" />
-            <label for="convertToJpg">将所有图片转为 JPG 格式（压缩结果图像大小）</label>
+document.getElementById('chooseRefBtn').onclick = () => document.getElementById('refInput').click();
+document.getElementById('refInput').onchange = e => { if (e.target.files[0]) loadRefImage(e.target.files[0]); };
 
-            <div id="jpgQualityContainer" style="display:none; margin-top:4px;">
-                <label for="jpgQuality">JPG 压缩质量：</label>
-                <select id="jpgQuality">
-                    <option value="0.7">0.7（小文件）</option>
-                    <option value="0.8" selected>0.8（推荐）</option>
-                    <option value="0.9">0.9（高质量）</option>
-                    <option value="1.0">1.0（最高质量）</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="form-group">
-            <input type="checkbox" id="extraInfoToggle" />
-            <label for="extraInfoToggle">附加描述图片和文本</label>
-        </div>
-
-        <div id="extraInfoContainer" style="display: none;">
-            <div class="form-group">
-                <label for="previewImageInput" class="file-label">🖼️ 上传描述图片（会显示在二维码下方）</label>
-                <input type="file" id="previewImageInput" accept="image/*" style="display:none;" />
-                <div id="previewImageName">未选择任何图片</div>
-                <button type="button" id="clearPreviewImageButton" style="margin-top: 10px;">❌ 清除描述图片</button>
-            </div>
-            <div class="form-group">
-                <input type="text" id="descriptionInput" p placeholder="输入描述文字（会显示在二维码下方）" rows="3"
-                    style="width: 90%; max-width: 400px;">
-            </div>
-        </div>
-
-        <div class="form-group">
-            <button id="generateButton">生成二维码图像</button>
-        </div>
-
-        <!-- 编码页进度条 -->
-        <div id="encodeProgressWrap" style="display:none; max-width:600px; margin:8px auto;">
-                <div id="encodeProgressText" style="text-align:center; font-size:0.9em; margin-bottom:6px;">准备中…</div>
-                <div style="height:10px; background:#eee; border-radius:6px; overflow:hidden;">
-                    <div id="encodeProgressBar" style="height:10px; width:0%; background:#1976d2;"></div>
-                </div>
-        </div>
-
-        <canvas id="qrCanvas" width="512" height="512" style="max-width: 90%; height: auto; display: none;"></canvas>
-        <div id="qrPreviewContainer" class="form-group"></div>
-        <div class="form-group">
-            <a id="downloadLink" style="display: none;">📥 下载二维码图像</a>
-        </div>
-    </section>
-
-    <footer>
-        本工具运行于浏览器本地，无需联网，所有数据处理均不上传。
-        <br>© 点缀星空 2025
-    </footer>
-
-    <script>
-        document.getElementById("convertToJpg").addEventListener("change", function () {
-            document.getElementById("jpgQualityContainer").style.display =
-                this.checked ? "block" : "none";
-        });
-
-        document.getElementById("generateButton").onclick = async function () {
-            const files = document.getElementById("filesInput").files;
-            if (files.length === 0) {
-                alert("请选择文件");
+function loadRefImage(file) {
+    const reader = new FileReader();
+    reader.onload = ev => {
+        const img = new Image();
+        img.onload = () => {
+            if (!imgDataEncode) {
+                alert("请先选择目标图，参考图会按目标图比例裁剪缩放");
                 return;
             }
+            const targetW = imgDataEncode.width;
+            const targetH = imgDataEncode.height;
+            const targetRatio = targetW / targetH;
 
-            const button = document.getElementById("generateButton");
-            // 禁用按钮并改文字
-            button.disabled = true;
-            const originalText = button.innerText;
-            button.innerText = "处理中…";
-
-            try {
-                await generateDataQRCodeFromFiles(files);
-            } catch (err) {
-                console.error(err);
-                alert("处理失败：" + err.message);
+            // 先裁剪到相同比例
+            let cropX = 0, cropY = 0, cropW = img.width, cropH = img.height;
+            let imgRatio = img.width / img.height;
+            if (imgRatio > targetRatio) {
+                // 图像太宽，裁掉左右
+                cropW = img.height * targetRatio;
+                cropX = (img.width - cropW) / 2;
+            } else if (imgRatio < targetRatio) {
+                // 图像太高，裁掉上下
+                cropH = img.width / targetRatio;
+                cropY = (img.height - cropH) / 2;
             }
 
-            // 恢复按钮
-            button.disabled = false;
-            button.innerText = originalText;
+            // 缩放到目标分辨率（加密用）
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = targetW;
+            tempCanvas.height = targetH;
+            const ctx = tempCanvas.getContext('2d');
+            ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
+            refImageData = ctx.getImageData(0, 0, targetW, targetH);
+
+            // 参考图预览（直接用加密用版本等比适应绘制）
+            ctxRef.clearRect(0, 0, previewRef.width, previewRef.height);
+            let scalePrev = Math.min(previewRef.width / targetW, previewRef.height / targetH);
+            let prevW = targetW * scalePrev;
+            let prevH = targetH * scalePrev;
+            ctxRef.drawImage(tempCanvas, (previewRef.width - prevW) / 2, (previewRef.height - prevH) / 2, prevW, prevH);
+            
+            // 自动勾选
+            document.getElementById('useGuided').checked = true;
         };
-
-        function zipFilesAsync(fileList) {
-            return new Promise((resolve, reject) => {
-                const entries = {};          // { filename: Uint8Array }
-                let readDone = 0;
-                const total = fileList.length;
-                if (total === 0) return resolve(new Uint8Array());
-
-                const convertImages = document.getElementById('convertToJpg')?.checked === true;
-
-                // —— 工具：确保不重名（自动加 " (1)", " (2)" …）——
-                const ensureUniqueName = (name) => {
-                    const dot = name.lastIndexOf('.');
-                    const base = dot >= 0 ? name.slice(0, dot) : name;
-                    const ext = dot >= 0 ? name.slice(dot) : '';
-                    let cand = name, k = 1;
-                    while (Object.prototype.hasOwnProperty.call(entries, cand)) {
-                        cand = `${base} (${k++})${ext}`;
-                    }
-                    return cand;
-                };
-
-                // —— 工具：把图片转成 JPG（白底），返回 { name, data: Uint8Array } —— 
-                async function convertImageFileToJpeg(file, quality = 0.85) {
-                    let canvas, ctx, width, height;
-
-                    // 尝试更稳的解码方式
-                    let bitmap = null;
-                    try {
-                        bitmap = await createImageBitmap(file, {
-                            imageOrientation: 'none',
-                            premultiplyAlpha: 'none',
-                            colorSpaceConversion: 'none'
-                        });
-                    } catch { /* 回退到 <img> */ }
-
-                    if (bitmap) {
-                        width = bitmap.width; height = bitmap.height;
-                        canvas = document.createElement('canvas');
-                        canvas.width = width; canvas.height = height;
-                        ctx = canvas.getContext('2d', { willReadFrequently: true });
-                        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, height);
-                        ctx.drawImage(bitmap, 0, 0);
-                    } else {
-                        const url = URL.createObjectURL(file);
-                        const img = await new Promise((res, rej) => {
-                            const im = new Image();
-                            im.onload = () => res(im);
-                            im.onerror = () => rej(new Error('无法解码图片'));
-                            im.src = url;
-                        }).finally(() => URL.revokeObjectURL(url));
-                        width = img.naturalWidth || img.width;
-                        height = img.naturalHeight || img.height;
-                        canvas = document.createElement('canvas');
-                        canvas.width = width; canvas.height = height;
-                        ctx = canvas.getContext('2d', { willReadFrequently: true });
-                        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, height);
-                        ctx.drawImage(img, 0, 0);
-                    }
-
-                    const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', quality));
-                    if (!blob) throw new Error('JPG 编码失败');
-                    const data = new Uint8Array(await blob.arrayBuffer());
-
-                    // 统一改扩展名为 .jpg
-                    const base = file.name.replace(/\.[^.]+$/, '');
-                    return { name: `${base}.jpg`, data };
-                }
-
-                // —— 完成一个文件的入包 + 进度 / 触发压缩 —— 
-                const doneOne = async () => {
-                    readDone++;
-                    setProgress("encode", Math.floor((readDone / total) * 40), `读取文件…(${readDone}/${total})`);
-                    if (readDone === total) {
-                        // 异步 zip，不阻塞主线程
-                        setProgress("encode", 45, "压缩中…");
-                        await uiTick();
-                        fflate.zip(entries, { level: 9 }, (err, zipped) => {
-                            if (err) return reject(err);
-                            setProgress("encode", 60, "压缩完成");
-                            resolve(zipped);
-                        });
-                    }
-                };
-
-                // —— 遍历文件：读取 & 可选转换 —— 
-                for (const file of fileList) {
-                    const fr = new FileReader();
-                    fr.onload = async () => {
-                        try {
-                            const isImage = file.type && file.type.startsWith('image/');
-                            if (convertImages && isImage) {
-                                // 若勾选：把所有图片转成 JPG；若已是 JPEG 直接收录（避免重复编码）
-                                if (file.type === 'image/jpeg' || /\.jpe?g$/i.test(file.name)) {
-                                    const unique = ensureUniqueName(file.name);
-                                    entries[unique] = new Uint8Array(fr.result); // 原样
-                                } else {
-                                    try {
-                                        const quality = parseFloat(document.getElementById("jpgQuality").value || "0.85");
-                                        //console.log(quality);
-                                        const { name, data } = await convertImageFileToJpeg(file, quality);
-                                        const unique = ensureUniqueName(name);
-                                        entries[unique] = data;
-                                    } catch (e) {
-                                        // 转换失败，回退成原文件
-                                        console.warn('图片转换失败，已回退原文件：', file.name, e);
-                                        const unique = ensureUniqueName(file.name);
-                                        entries[unique] = new Uint8Array(fr.result);
-                                    }
-                                }
-                            } else {
-                                // 不转换：原样加入
-                                const unique = ensureUniqueName(file.name);
-                                entries[unique] = new Uint8Array(fr.result);
-                            }
-                        } catch (e) {
-                            return reject(e);
-                        }
-                        await doneOne();
-                    };
-                    fr.onerror = () => reject(new Error(`无法读取文件: ${file.name}`));
-                    fr.readAsArrayBuffer(file);
-                }
-            });
-        }
-
-        async function composeFinalQRCodeCanvas(qrCanvas) {
-            const useExtra = document.getElementById("extraInfoToggle").checked;
-            if (!useExtra) return qrCanvas;
-
-            const n = qrCanvas.width; // assume square
-            const extraHeight = Math.floor(n * 0.25);
-            const totalHeight = n + extraHeight;
-
-            const finalCanvas = document.createElement("canvas");
-            finalCanvas.width = n;
-            finalCanvas.height = totalHeight;
-
-            const ctx = finalCanvas.getContext("2d");
-
-            // 背景白
-            ctx.fillStyle = "#ffffff";
-            ctx.fillRect(0, 0, n, totalHeight);
-
-            // 绘制二维码主体
-            ctx.drawImage(qrCanvas, 0, 0);
-
-            // 获取附加信息
-            const previewImageFile = document.getElementById("previewImageInput").files[0];
-            const descriptionText = document.getElementById("descriptionInput").value.trim();
-
-            // 若没有描述图片，则让文本居中显示
-            if (!previewImageFile) {
-                if (descriptionText !== "") {
-                    const maxWidth = 0.9 * n;
-                    const maxHeight = 0.1 * n;
-
-                    let fontSize = 1;
-                    while (true) {
-                        ctx.font = `${fontSize + 1}px sans-serif`;
-                        const metrics = ctx.measureText(descriptionText);
-                        const textHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-                        const textWidth = metrics.width;
-                        if (textHeight > maxHeight || textWidth > maxWidth) break;
-                        fontSize++;
-                    }
-
-                    ctx.font = `${fontSize}px sans-serif`;
-                    ctx.fillStyle = "#000";
-                    ctx.textBaseline = "middle";
-                    ctx.textAlign = "center";
-                    ctx.fillText(descriptionText, n / 2, n + extraHeight / 2);
-                }
-
-                return finalCanvas;
-            }
-
-            return new Promise((resolve) => {
-                // 有描述图片 → 需要异步加载图片后绘制
-                const img = new Image();
-                const reader = new FileReader();
-
-                reader.onload = function () {
-                    img.onload = function () {
-                        // 描述图位置：左下角 0.2n x 0.2n
-                        const boxSize = n * 0.2;
-                        const boxX = 0;
-                        const boxY = n + (extraHeight - boxSize) / 2;
-
-                        let imgW = img.width;
-                        let imgH = img.height;
-                        const scale = Math.min(boxSize / imgW, boxSize / imgH);
-                        imgW *= scale;
-                        imgH *= scale;
-
-                        // 计算居中绘制的起点
-                        const drawX = boxX + (boxSize - imgW) / 2;
-                        const drawY = boxY + (boxSize - imgH) / 2;
-
-                        ctx.drawImage(img, drawX, drawY, imgW, imgH);
-
-                        // 描述文字位置：右下角 0.7n x 0.1n
-                        if (descriptionText !== "") {
-                            const boxWidth = n * 0.7;
-                            const boxHeight = n * 0.1;
-                            const boxX = n * 0.25;
-                            const boxY = n + (extraHeight - boxHeight) / 2;
-
-                            let fontSize = 1;
-                            while (true) {
-                                ctx.font = `${fontSize + 1}px sans-serif`;
-                                const metrics = ctx.measureText(descriptionText);
-                                const textHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-                                const textWidth = metrics.width;
-                                if (textHeight > boxHeight || textWidth > boxWidth) break;
-                                fontSize++;
-                            }
-
-                            ctx.font = `${fontSize}px sans-serif`;
-                            ctx.fillStyle = "#000";
-                            ctx.textBaseline = "middle";
-                            ctx.textAlign = "left";
-                            ctx.fillText(descriptionText, boxX, boxY + boxHeight / 2);
-                        }
-                        resolve(finalCanvas);
-                    };
-                    img.src = reader.result;
-                };
-
-                reader.readAsDataURL(previewImageFile);
-            });
-        }
-
-        async function generateDataQRCodeFromFiles(fileList) {
-            try {
-                // === 0) 进度：开始 ===
-                setProgress("encode", 1, "准备开始…");
-                await uiTick();
-
-                // === 1) 压缩为 zip ===
-                setProgress("encode", 4, "压缩文件…");
-                const zipped = await zipFilesAsync(fileList);
-                await uiTick();
-
-                // === 2) 构造“逻辑头 + 负载”的字节流 ===
-                // 新版逻辑头 8 字节：[0]=checksum(1), [1..3]=qrSize(3,大端 占位), [4..7]=zippedLength(4,大端)
-                const checksum = zipped.reduce((acc, b) => acc ^ b, 0) & 0xff;
-                const zippedLength = zipped.length;
-
-                // 选模式：pair41=2字节/像素；byte7=1字节/像素；并决定物理头像素P2的策略通道值 255/254
-                let bytesPerPixel;
-                let strategyByteForP2B;
-                const mode = document.getElementById("embedMode").value;
-                if (mode === "pair41") {
-                    bytesPerPixel = 2;
-                    strategyByteForP2B = 255; // P2.B
-                } else if (mode === "byte7") {
-                    bytesPerPixel = 1;
-                    strategyByteForP2B = 254; // P2.B
-                } else throw new Error("未知嵌入模式");
-
-                // 先不写 qrSize，待计算容量后回填
-                const fullLength = 8 + zippedLength;
-                const fullData = new Uint8Array(fullLength);
-                fullData[0] = checksum;
-                // [1..3] qrSize 稍后回填
-                fullData[4] = (zippedLength >>> 24) & 0xFF;
-                fullData[5] = (zippedLength >>> 16) & 0xFF;
-                fullData[6] = (zippedLength >>> 8) & 0xFF;
-                fullData[7] = zippedLength & 0xFF;
-                fullData.set(zipped, 8);
-
-                // === 3) 计算尺寸（容量足够：可用像素 = qrSize^2 - 3）===
-                setProgress("encode", 8, "计算尺寸与头部…");
-                const neededPixels = Math.ceil(fullLength / bytesPerPixel); // 需要的数据像素数
-                let qrSize = Math.ceil(Math.sqrt(neededPixels + 3)); // +3 留给物理头
-                qrSize = Math.max(512, qrSize);
-
-                // 回写 qrSize 到逻辑头（大端）
-                fullData[1] = (qrSize >> 16) & 0xFF;
-                fullData[2] = (qrSize >> 8) & 0xFF;
-                fullData[3] = qrSize & 0xFF;
-                await uiTick();
-
-                // === 4) 生成二维码底图（黑白 QR）===
-                setProgress("encode", 12, "生成基础二维码…");
-                const canvas = document.createElement("canvas");
-                canvas.width = qrSize;
-                canvas.height = qrSize;
-
-                const selectedURL = document.getElementById("qrLinkSelect").value;
-                await new Promise((resolve, reject) => {
-                    QRCode.toCanvas(
-                        canvas,
-                        selectedURL,
-                        { errorCorrectionLevel: "L", margin: 1, width: qrSize },
-                        (err) => (err ? reject(err) : resolve())
-                    );
-                });
-                await uiTick();
-
-                // === 5) 将数据写入像素（从 (3,0) 开始；(0,0)(1,0)(2,0) 为物理头）===
-                setProgress("encode", 20, "写入数据到像素…");
-                const ctx = canvas.getContext("2d");
-                const imgData = ctx.getImageData(0, 0, qrSize, qrSize);
-                const px = imgData.data;
-
-                // -------- 小工具：编码 & 黑白映射 --------
-                function encodeTwoBytesToThreeBytes(b1, b2) {
-                    let v = ((b1 & 0xFF) << 8) | (b2 & 0xFF);
-                    const c3 = v % 41; v = Math.floor(v / 41);
-                    const c2 = v % 41; v = Math.floor(v / 41);
-                    const c1 = v; // 0..40
-                    return [c1, c2, c3];
-                }
-                function encodeByteToRGB7(b) {
-                    let v = b & 0xFF;
-                    const c3 = v % 7; v = Math.floor(v / 7);
-                    const c2 = v % 7; v = Math.floor(v / 7);
-                    const c1 = v; // 0..6
-                    return [c1, c2, c3];
-                }
-                const writeCh = (orig, v) => (orig < 128 ? v : 255 - v);
-
-                // 写入物理文件头（3 像素）——不做黑白映射，直接写实值
-                (function setPhysicalHeader() {
-                    // P0 = (250,251,252) @ (0,0)
-                    let i0 = 0 * 4;
-                    px[i0] = 250; px[i0 + 1] = 251; px[i0 + 2] = 252; px[i0 + 3] = 255;
-
-                    // P1 = (253,254,255) @ (1,0)
-                    let i1 = 1 * 4;
-                    px[i1] = 253; px[i1 + 1] = 254; px[i1 + 2] = 255; px[i1 + 3] = 255;
-
-                    // P2 = (255,255, strategyByteForP2B) @ (2,0)  —— 版本高/低=255, 策略=255/254
-                    let i2 = 2 * 4;
-                    px[i2] = 255; px[i2 + 1] = 255; px[i2 + 2] = strategyByteForP2B; px[i2 + 3] = 255;
-                })();
-
-                // 数据从 (3,0) 开始逐像素写入
-                const totalBytes = fullLength;
-                const startPct = 20, endPct = 92, pctSpan = endPct - startPct;
-                let dataIndex = 0, lastReport = 0;
-
-                const report = () => {
-                    // 进度只根据“真实写入的数据字节数”推进；随机填充不再推进进度
-                    const wrote = Math.min(dataIndex, totalBytes);
-                    if (wrote - lastReport >= 8192 || wrote === totalBytes) {
-                        lastReport = wrote;
-                        const frac = wrote / totalBytes;
-                        const pct = startPct + Math.floor(frac * pctSpan);
-                        setProgress("encode", pct, `写入数据… (${wrote}/${totalBytes} 字节)`);
-                    }
-                };
-
-                for (let y = 0; y < qrSize; y++) {
-                    for (let x = 0; x < qrSize; x++) {
-                        // 跳过物理头 3 个像素
-                        if (y === 0 && (x === 0 || x === 1 || x === 2)) continue;
-
-                        const idx = (y * qrSize + x) * 4;
-
-                        let c1, c2, c3;
-                        if (dataIndex < totalBytes) {
-                            // —— 正常数据写入 ——
-                            if (bytesPerPixel === 2) {
-                                const b1 = (dataIndex < totalBytes) ? fullData[dataIndex++] : 0;
-                                const b2 = (dataIndex < totalBytes) ? fullData[dataIndex++] : 0;
-                                [c1, c2, c3] = encodeTwoBytesToThreeBytes(b1, b2); // 0..40
-                            } else {
-                                const b = (dataIndex < totalBytes) ? fullData[dataIndex++] : 0;
-                                [c1, c2, c3] = encodeByteToRGB7(b); // 0..6
-                            }
-                            report();
-                        } else {
-                            // —— 随机填充（保持在允许范围）——
-                            if (bytesPerPixel === 2) {
-                                c1 = (Math.random() * 41) | 0;  // 0..40
-                                c2 = (Math.random() * 41) | 0;
-                                c3 = (Math.random() * 41) | 0;
-                            } else {
-                                c1 = (Math.random() * 7) | 0;   // 0..6
-                                c2 = (Math.random() * 7) | 0;
-                                c3 = (Math.random() * 7) | 0;
-                            }
-                            // 随机填充阶段不再推进进度
-                        }
-
-                        // 黑/白映射后写入像素
-                        px[idx] = writeCh(px[idx], c1);
-                        px[idx + 1] = writeCh(px[idx + 1], c2);
-                        px[idx + 2] = writeCh(px[idx + 2], c3);
-                        px[idx + 3] = 255;
-                    }
-                    if ((y & 7) === 0) await uiTick();
-                }
-
-                // 数据阶段已满（92%）
-                setProgress("encode", 92, "写入完成，收尾中…");
-                ctx.putImageData(imgData, 0, 0);
-
-                // === 6) 合成预览 & 导出 ===
-                setProgress("encode", 94, "合成展示…");
-                await uiTick();
-
-                const preview = document.getElementById("qrPreviewContainer");
-                preview.innerHTML = "";
-
-                const composed = await composeFinalQRCodeCanvas(canvas);
-                preview.appendChild(composed);
-
-                const displayWidth = 300;
-                const ratio = composed.height / composed.width;
-                composed.style.width = `${displayWidth}px`;
-                composed.style.height = `${displayWidth * ratio}px`;
-                composed.style.display = "block";
-                composed.style.margin = "10px auto";
-
-                // 下载链接
-                const link = document.getElementById("downloadLink");
-                link.style.display = "none";
-
-                setProgress("encode", 96, "正在编码 PNG…");
-                await uiTick();
-
-                composed.toBlob((blob) => {
-                    if (!blob) { alert("PNG 编码失败"); hideProgress("encode", "失败"); return; }
-                    const url = URL.createObjectURL(blob);
-                    link.href = url;
-                    link.download = "qr_encoded.png";
-                    link.style.display = "inline-block";
-                    link.onclick = () => setTimeout(() => URL.revokeObjectURL(url), 2000);
-                    hideProgress("encode", "完成");
-                }, "image/png");
-            } catch (err) {
-                console.error(err);
-                alert(`编码失败：${err.message || err}`);
-                hideProgress("encode", "失败");
-            }
-        }
-
-        function switchTab(mode) {
-            const decoderButton = document.getElementById("extractTab");
-            const encoderButton = document.getElementById("embedTab");
-
-            const decoderSection = document.getElementById("decoder");
-            const encoderSection = document.getElementById("encoder");
-
-            if (mode === "decoder") {
-                decoderButton.classList.add("active");
-                encoderButton.classList.remove("active");
-
-                decoderSection.classList.add("active");
-                encoderSection.classList.remove("active");
-            } else if (mode === "encoder") {
-                encoderButton.classList.add("active");
-                decoderButton.classList.remove("active");
-
-                encoderSection.classList.add("active");
-                decoderSection.classList.remove("active");
-            }
-        }
-
-        document.getElementById("decodeButton").onclick = async function () {
-            const input = document.getElementById("imageInput");
-            const file = input.files && input.files[0];
-            if (!file) {
-                alert("请先选择二维码图片");
-                return;
-            }
-
-            const button = document.getElementById("decodeButton");
-            button.disabled = true;
-            const originalText = button.innerText;
-            button.innerText = "处理中…";
-
-            try {
-                await decodeQRCode(file, button, originalText);
-            } catch (err) {
-                console.error(err);
-                alert("处理失败：" + err.message);
-                // 出错时这里可以兜底恢复按钮
-                button.disabled = false;
-                button.innerText = originalText;
-            }
-        };
-
-        async function decodeQRCode(file, button, originalText) {
-            const cancel = (msg) => { if (msg) alert(msg); hideProgress("decode", "已取消"); };
-            const finish = (msg) => hideProgress("decode", msg || "完成");
-
-            const workerSrc = `
-self.onmessage = async (e) => {
-  const msg = e.data || {};
-  if (msg.type !== 'scan') return;
-
-  // --- 常量与小工具 ---
-  const P0 = [250,251,252];
-  const P1 = [253,254,255];
-  const STRAT_PAIR41 = 255; // 2B/像素（41进制）
-  const STRAT_BYTE7  = 254; // 1B/像素（7进制）
-
-  const readCh = (ch) => (ch > 128) ? (255 - ch) : ch;
-
-  function decodeThreeBytesToTwoBytes(c1, c2, c3) {
-    if (c1<0||c1>40||c2<0||c2>40||c3<0||c3>40) return null;
-    const v = c1*41*41 + c2*41 + c3;
-    return [(v>>8)&0xFF, v&0xFF];
-  }
-  function decodeRGB7ToByte(c1, c2, c3) {
-    if (c1<0||c1>6||c2<0||c2>6||c3<0||c3>6) return null;
-    return (c1*49)+(c2*7)+c3;
-  }
-
-  function* headerCandidates(px, width, height) {
-    // 整图扫描连续三像素：P0, P1, P2(255,255,策略)
-    for (let y=0; y<height; y++) {
-      for (let x=0; x<=width-3; x++) {
-        const i0=(y*width+x)*4, i1=i0+4, i2=i1+4;
-        if (px[i0]===P0[0] && px[i0+1]===P0[1] && px[i0+2]===P0[2] &&
-            px[i1]===P1[0] && px[i1+1]===P1[1] && px[i1+2]===P1[2] &&
-            px[i2]===255   && px[i2+1]===255   && (px[i2+2]===STRAT_PAIR41 || px[i2+2]===STRAT_BYTE7)) {
-          yield { ox:x, oy:y, strategy:px[i2+2] };
-        }
-      }
+        img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+// ===== 线程数生成 =====
+function fillThreads(selectId) {
+    const cpuCount = navigator.hardwareConcurrency || 4;
+    let set = new Set([1, 2, 4, 8, 16, cpuCount].filter(v => v <= cpuCount));
+    const threadOptions = Array.from(set).sort((a, b) => a - b);
+    const defaultThread = threadOptions.reduce((a, b) =>
+        Math.abs(a - cpuCount / 2) < Math.abs(b - cpuCount / 2) ? a : b
+    );
+    const select = document.getElementById(selectId);
+    select.innerHTML = "";
+    threadOptions.forEach(t => {
+        let opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t + " 线程";
+        if (t === defaultThread) opt.selected = true;
+        select.appendChild(opt);
+    });
+}
+function drawImageContain(ctx, canvas, img) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    let scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+    let w = img.width * scale;
+    let h = img.height * scale;
+    ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+}
+fillThreads("threadSelectEncode");
+fillThreads("threadSelectDecode");
+
+// ===== 页面切换 =====
+const tabEncode = document.getElementById('tabEncode');
+const tabDecode = document.getElementById('tabDecode');
+const pageEncode = document.getElementById('pageEncode');
+const pageDecode = document.getElementById('pageDecode');
+tabEncode.onclick = () => { tabEncode.classList.add('active'); tabDecode.classList.remove('active'); pageEncode.classList.add('active'); pageDecode.classList.remove('active'); };
+tabDecode.onclick = () => { tabDecode.classList.add('active'); tabEncode.classList.remove('active'); pageDecode.classList.add('active'); pageEncode.classList.remove('active'); };
+
+// ===== 编码逻辑 =====
+const previewEncode = document.getElementById('previewEncode');
+const ctxEncode = previewEncode.getContext('2d');
+let imgDataEncode = null, imgNameEncode = "";
+
+function drawPlaceholder(ctx, w, h, text) {
+    ctx.fillStyle = "#f0f0f0";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#666";
+    ctx.font = "16px Segoe UI";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, w/2, h/2);
+}
+drawPlaceholder(ctxEncode, previewEncode.width, previewEncode.height, "请选择或拖入一张有效的图片");
+
+// ====== 涂抹画布功能======
+const overlayCanvas = document.getElementById('drawOverlay');
+const overlayCtx = overlayCanvas.getContext('2d');
+let isDrawing = false;
+let lastX = 0, lastY = 0;
+let brushSize = 30;
+let brushColor = 'rgb(0,0,0)';
+
+// 撤回历史栈
+const undoStack = [];
+const maxUndoSteps = 20; // 最多保存20步
+
+// 设置画布整体半透明显示
+overlayCanvas.style.opacity = "0.5";
+
+// 保存当前状态到撤回栈
+function saveState() {
+    if (undoStack.length >= maxUndoSteps) {
+        undoStack.shift(); // 超过限制移除最早的一步
     }
-  }
+    undoStack.push(overlayCtx.getImageData(0, 0, overlayCanvas.width, overlayCanvas.height));
+}
 
-  try {
-    const { width, height, pixelsBuf } = msg;
-    const px = new Uint8ClampedArray(pixelsBuf);
+// 鼠标绘制事件
+overlayCanvas.addEventListener('mousedown', e => {
+    saveState();
+    isDrawing = true;
+    const rect = overlayCanvas.getBoundingClientRect();
+    lastX = e.clientX - rect.left;
+    lastY = e.clientY - rect.top;
+    
+    drawLine(lastX, lastY);
+});
+overlayCanvas.addEventListener('mousemove', e => {
+    if (!isDrawing) return;
+    const rect = overlayCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-    let tried = 0;
-    for (const cand of headerCandidates(px, width, height)) {
-      tried++;
+    drawLine(x, y);
+});
+overlayCanvas.addEventListener('mouseup', () => isDrawing = false);
+overlayCanvas.addEventListener('mouseleave', () => isDrawing = false);
 
-      // ——— 1) 确定策略与像素读取游标 ———
-      const bytesPerPixel = (cand.strategy === STRAT_PAIR41) ? 2 : 1;
-      let curX = cand.ox + 3, curY = cand.oy; // 数据起点
+// 触控绘制事件
+overlayCanvas.addEventListener('touchstart', e => {
+    e.preventDefault(); // 阻止页面滚动
+    saveState();
+    isDrawing = true;
+    const rect = overlayCanvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    lastX = touch.clientX - rect.left;
+    lastY = touch.clientY - rect.top;
+    
+    drawLine(lastX, lastY);
+}, { passive: false });
 
-      const nextPixelIdx = (limitW, limitH) => {
-        const maxW = limitW ?? width;
-        const maxH = limitH ?? height;
-        if (curY >= maxH) return -1;
-        if (curX >= maxW) { curX = (limitW ? cand.ox : 0); curY++; }
-        if (curY >= maxH) return -1;
-        const idx = (curY*width + curX) * 4;
-        curX++;
-        return idx;
-      };
+overlayCanvas.addEventListener('touchmove', e => {
+    if (!isDrawing) return;
+    e.preventDefault(); // 阻止页面滚动
+    const rect = overlayCanvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
 
-      // ——— 2) 读取 8 字节逻辑头（不限制区域，通常仍在内容区）———
-      const head = new Uint8Array(8);
-      let hpos = 0;
-      let headerRangeError = false;
+    drawLine(x, y);
+}, { passive: false });
 
-      while (hpos < 8) {
-        const idx = nextPixelIdx(); // 暂不限制区域
-        if (idx < 0) { headerRangeError = true; break; }
-        const c1 = readCh(px[idx]), c2 = readCh(px[idx+1]), c3 = readCh(px[idx+2]);
-        if (bytesPerPixel === 2) {
-          const pair = decodeThreeBytesToTwoBytes(c1, c2, c3);
-          if (!pair) { headerRangeError = true; break; }
-          head[hpos++] = pair[0];
-          if (hpos < 8) head[hpos++] = pair[1];
-        } else {
-          const b = decodeRGB7ToByte(c1, c2, c3);
-          if (b == null) { headerRangeError = true; break; }
-          head[hpos++] = b;
+overlayCanvas.addEventListener('touchend', () => isDrawing = false);
+overlayCanvas.addEventListener('touchcancel', () => isDrawing = false);
+
+function drawLine(x, y) {
+    overlayCtx.strokeStyle = brushColor;
+    overlayCtx.lineWidth = brushSize;
+    overlayCtx.lineCap = 'round';
+    overlayCtx.lineJoin = 'round';
+
+    overlayCtx.beginPath();
+    overlayCtx.moveTo(lastX, lastY);
+    overlayCtx.lineTo(x, y);
+    overlayCtx.stroke();
+
+    lastX = x;
+    lastY = y;
+}
+
+// 清空按钮
+document.getElementById('clearOverlayBtn').onclick = () => {
+    saveState();
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+};
+
+// 撤回按钮
+document.getElementById('undoOverlayBtn').onclick = () => {
+    if (undoStack.length > 0) {
+        const prevState = undoStack.pop();
+        overlayCtx.putImageData(prevState, 0, 0);
+        // 撤回后统一改成当前画笔颜色
+        applyCurrentBrushColor();
+    }
+};
+
+// 统一颜色应用函数
+function applyCurrentBrushColor() {
+    const r = parseInt(brushColor.slice(1, 3), 16);
+    const g = parseInt(brushColor.slice(3, 5), 16);
+    const b = parseInt(brushColor.slice(5, 7), 16);
+
+    const imgData = overlayCtx.getImageData(0, 0, overlayCanvas.width, overlayCanvas.height);
+    for (let i = 0; i < imgData.data.length; i += 4) {
+        if (imgData.data[i + 3] > 0) { // 非透明像素
+            imgData.data[i] = r;
+            imgData.data[i + 1] = g;
+            imgData.data[i + 2] = b;
         }
-      }
-      if (headerRangeError) {
-        // 当前候选头失败，尝试下一个
-        self.postMessage({ type:'retry', reason:'头部解析失败，尝试下一个文件头…', tried });
-        continue;
-      }
+    }
+    overlayCtx.putImageData(imgData, 0, 0);
+}
 
-      const checksum = head[0] | 0;
-      const qrSize = ((head[1]<<16)|(head[2]<<8)|head[3])>>>0;
-      const zippedLength = (((head[4]<<24)>>>0)|(head[5]<<16)|(head[6]<<8)|head[7])>>>0;
-      const needTotal = 8 + zippedLength;
 
-      // 把头发给主线程，让其做 >50MB 确认
-      let proceed = true;
-      self.postMessage({ type:'head', qrSize, zippedLength, strategy: cand.strategy, tried });
+// 画笔大小调整
+document.getElementById('brushSizeSlider').addEventListener('input', e => {
+    brushSize = parseInt(e.target.value, 10);
+});
 
-      proceed = await new Promise(res=>{
-        const h=(ev)=>{ if (ev.data && ev.data.type==='head-ack') { self.removeEventListener('message',h); res(!!ev.data.proceed); } };
-        self.addEventListener('message', h);
-      });
-      if (!proceed) { self.postMessage({ type:'cancelled' }); return; }
+// 画笔颜色调整（保持透明度）
+document.getElementById('brushColorPicker').addEventListener('input', e => {
+    brushColor = e.target.value;
+    applyCurrentBrushColor();
+});
 
-      // ——— 3) 限定读取窗口，读取剩余数据并实时计算 XOR ———
-      const limitW = Math.min(width,  cand.ox + qrSize);
-      const limitH = Math.min(height, cand.oy + qrSize);
+    
+document.getElementById('chooseBtn').onclick = () => document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange = e => { if (e.target.files[0]) loadImageEncode(e.target.files[0]); };
 
-      const fullData = new Uint8Array(needTotal);
-      fullData.set(head, 0);
-      let pos = 8;
-
-      let calcXor = 0; // 仅对 zipped 部分计算
-      let lastReport = 0;
-      const report = () => {
-        if (pos - lastReport >= 10000 || pos >= needTotal) {
-          lastReport = pos;
-          self.postMessage({ type:'progress', got: pos, total: needTotal, tried });
-        }
-      };
-
-      let outOfPixels = false;
-      while (pos < needTotal) {
-        const idx = nextPixelIdx(limitW, limitH);
-        if (idx < 0) { outOfPixels = true; break; }
-        const c1 = readCh(px[idx]), c2 = readCh(px[idx+1]), c3 = readCh(px[idx+2]);
-        if (bytesPerPixel === 2) {
-          const pair = decodeThreeBytesToTwoBytes(c1, c2, c3);
-          if (!pair) { outOfPixels = true; break; }
-          if (pos < needTotal) { fullData[pos] = pair[0]; calcXor ^= pair[0]; pos++; }
-          if (pos < needTotal) { fullData[pos] = pair[1]; calcXor ^= pair[1]; pos++; }
-        } else {
-          const b = decodeRGB7ToByte(c1, c2, c3);
-        if (b == null) { outOfPixels = true; break; }
-          fullData[pos] = b; calcXor ^= b; pos++;
-        }
-        report();
-      }
-      if (outOfPixels || pos < needTotal) {
-        self.postMessage({ type:'retry', reason:'像素不足或数据读失败，尝试下一个文件头…', tried });
-        continue; // 下一个候选头
-      }
-
-      // ——— 4) 校验 XOR ———
-      if ((calcXor & 0xFF) !== checksum) {
-        // 这个候选头校验不通过，自动尝试下一个
-        self.postMessage({ type:'retry', reason:'校验失败，尝试下一个文件头…', tried, calc: (calcXor & 0xFF), checksum });
-        continue;
-      }
-
-      // 成功
-      self.postMessage({ type:'done', fullData: fullData.buffer }, [fullData.buffer]);
-      return;
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => e.preventDefault());
+document.body.addEventListener('drop', e => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (!file || !file.type.startsWith('image/')) {
+        alert("请拖入图片文件");
+        return;
     }
 
-    // 没有任何候选头成功
-    self.postMessage({ type:'error', message:'未找到有效的数据头或所有候选头均校验失败。图像可能被压缩/缩放，请使用原始 PNG。' });
+    if (pageEncode.classList.contains('active')) {
+        // 编码页
+        const rectTarget = document.getElementById('previewEncode').getBoundingClientRect();
+        const rectRef = document.getElementById('previewRef').getBoundingClientRect();
+        const x = e.clientX;
+        const y = e.clientY;
 
-  } catch (err) {
-    self.postMessage({ type:'error', message: err?.message || String(err) });
-  }
+        if (x >= rectTarget.left && x <= rectTarget.right &&
+            y >= rectTarget.top && y <= rectTarget.bottom) {
+            loadImageEncode(file);
+        } else if (x >= rectRef.left && x <= rectRef.right &&
+                   y >= rectRef.top && y <= rectRef.bottom) {
+            loadRefImage(file);
+        } else {
+            alert("请拖到目标图或参考图框内");
+        }
+    }
+    else if (pageDecode.classList.contains('active')) {
+        // 解密页
+        const rectA = document.getElementById('previewDecodeA').getBoundingClientRect();
+        const rectB = document.getElementById('previewDecodeB').getBoundingClientRect();
+        const x = e.clientX;
+        const y = e.clientY;
+
+        if (x >= rectA.left && x <= rectA.right && y >= rectA.top && y <= rectA.bottom) {
+            loadDecodeImage(file, 'A');
+        } else if (x >= rectB.left && x <= rectB.right && y >= rectB.top && y <= rectB.bottom) {
+            loadDecodeImage(file, 'B');
+        } else {
+            alert("请拖到对应的图片框内");
+        }
+    }
+});
+
+
+function loadImageEncode(file) {
+    const reader = new FileReader();
+    imgNameEncode = file.name.split('.')[0];
+    reader.onload = ev => {
+        const img = new Image();
+        img.onload = () => {
+            ctxEncode.clearRect(0, 0, previewEncode.width, previewEncode.height);
+            let scale = Math.min(previewEncode.width / img.width, previewEncode.height / img.height);
+            ctxEncode.drawImage(img, (previewEncode.width - img.width * scale) / 2, (previewEncode.height - img.height * scale) / 2, img.width * scale, img.height * scale);
+
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = img.width;
+            tempCanvas.height = img.height;
+            tempCanvas.getContext('2d').drawImage(img, 0, 0);
+            imgDataEncode = tempCanvas.getContext('2d').getImageData(0, 0, img.width, img.height);
+
+            // 清空参考图
+            refImageData = null;
+            ctxRef.clearRect(0, 0, previewRef.width, previewRef.height);
+            document.getElementById('useGuided').checked = false;
+            
+            saveState();
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        };
+        img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+const encodeWorkerCode = `
+function generateAB(OcRGB) {
+    let A = [0,0,0], B = [0,0,0];
+    let L = (OcRGB[0]+OcRGB[1]+OcRGB[2])/3.0/255.0;
+    let modeBrightProb = L / 2 + 0.5;
+    let modeBright = Math.random() < modeBrightProb;
+    let specialChannel = Math.floor(Math.random() * 3);
+    for (let c=0;c<3;c++){
+        if(modeBright){
+            if(c===specialChannel){ A[c]=0; B[c]=OcRGB[c]; }
+            else { A[c]=255; B[c]=255-OcRGB[c]; }
+        } else {
+            if(c===specialChannel){ A[c]=255; B[c]=255-OcRGB[c]; }
+            else { A[c]=0; B[c]=OcRGB[c]; }
+        }
+    }
+    if (Math.random() < 0.5) return [B, A];
+    return [A, B];
+}
+
+function generateABGuided(OcRGB, RcRGB) {
+    let A = [0,0,0], B = [0,0,0];
+    let randomMid = 0.5;
+    //let specialChannel = Math.floor(Math.random() * 3);
+    let largest = -1, largestC = 0;
+    
+    for (let c = 0; c < 3; c++) {
+        let O = OcRGB[c];
+        let R = RcRGB[c];
+
+        // X 合法范围
+        let minX = O / 2.0;
+        let maxX = 255 - O / 2.0;
+
+        // 如果 R 在范围内就直接取 R，否则取最近的边界
+        let X;
+        if (R >= minX && R <= maxX) {
+            X = R;
+        } else {
+            X = (Math.abs(minX - R) < Math.abs(maxX - R)) ? minX : maxX;
+        }
+
+        let lowVal  = Math.round(X - O / 2.0);
+        let highVal = Math.round(X + O / 2.0);
+
+        A[c] = Math.min(255, highVal);
+        B[c] = A[c] - O;
+        
+        if (Math.abs(A[c] - B[c]) > largest || (Math.abs(A[c] - B[c]) == largest && Math.random() < randomMid))
+        {
+            largestC = c;
+            largest = Math.abs(A[c] - B[c]);
+        }
+    }
+    
+    let temp = A[largestC];
+    A[largestC] = B[largestC]
+    B[largestC] = temp;
+    
+    if (Math.random() < randomMid) return [B, A];
+    return [A, B];
+}
+
+function generateABSimple(OcRGB) {
+    let A = [0,0,0], B = [0,0,0];
+    let randomMid = 0.5;
+    
+    for (let c = 0; c < 3; c++) {
+        let O = OcRGB[c];
+        let R = 0;
+
+        // X 合法范围
+        let minX = O / 2.0;
+        let maxX = 255 - O / 2.0;
+
+        // 如果 R 在范围内就直接取 R，否则取最近的边界
+        let X;
+        if (R >= minX && R <= maxX) {
+            X = R;
+        } else {
+            X = (Math.abs(minX - R) < Math.abs(maxX - R)) ? minX : maxX;
+        }
+
+        let lowVal  = Math.round(X - O / 2.0);
+        let highVal = Math.round(X + O / 2.0);
+
+        A[c] = Math.min(255, highVal);
+        B[c] = A[c] - O;
+    }
+    
+    if (Math.random() < randomMid) return [B, A];
+    return [A, B];
+}
+
+onmessage = function(e) {
+    const { startY, endY, w, h, data, useGuided, refData, maskData } = e.data;
+    const maskThreshold = 128; // 透明度阈值
+
+    // 判断蒙版是否为空
+    let maskEmpty = true;
+    if (maskData) {
+        for (let i = 3; i < maskData.length; i += 4) {
+            if (maskData[i] > 0) { // alpha > 0
+                maskEmpty = false;
+                break;
+            }
+        }
+    }
+
+    const A = new Uint8ClampedArray((endY - startY) * w * 4);
+    const B = new Uint8ClampedArray((endY - startY) * w * 4);
+
+    for (let y = startY; y < endY; y++) {
+        for (let x = 0; x < w; x++) {
+            let idx = ((y-startY)*w+x)*4;
+            let idxSrc = (y*w+x)*4;
+            let Ovals = [data[idxSrc], data[idxSrc+1], data[idxSrc+2]];
+            let Rvals = refData ? [refData[idxSrc], refData[idxSrc+1], refData[idxSrc+2]] : null;
+            const maskAlpha = maskData ? maskData[idxSrc + 3] : 0;
+
+            let Avals, Bvals;
+
+            if (useGuided && maskAlpha < maskThreshold) {
+                // 情况 1：有参考图且蒙版透明
+                [Avals, Bvals] = generateABGuided(Ovals, Rvals);
+            } else if (!useGuided && !maskEmpty && maskAlpha < maskThreshold) {
+                // 情况 2：无参考图 & 蒙版不为空 & 蒙版透明
+                [Avals, Bvals] = generateABSimple(Ovals);
+            } else {
+                // 情况 3：其他情况
+                [Avals, Bvals] = generateAB(Ovals);
+            }
+
+            A[idx]=Avals[0]; B[idx]=Bvals[0];
+            A[idx+1]=Avals[1]; B[idx+1]=Bvals[1];
+            A[idx+2]=Avals[2]; B[idx+2]=Bvals[2];
+            A[idx+3]=255; B[idx+3]=255;
+        }        
+        if ((y-startY) % 50 === 0) postMessage({ rowsDone: y - startY + 1 });
+    }
+
+    postMessage({ done: true, A, B, startY, endY });
 };
 `;
 
-            const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: 'application/javascript' })));
+function setProcessingState(btnId, isProcessing, defaultText) {
+    const btn = document.getElementById(btnId);
+    if (isProcessing) {
+        btn.disabled = true;
+        btn.textContent = "处理中...";
+    } else {
+        btn.disabled = false;
+        btn.textContent = defaultText;
+    }
+}
 
-            const url = URL.createObjectURL(file);
-            let bitmap;
-            try {
-                bitmap = await createImageBitmap(file, { imageOrientation: 'none', premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-            } catch {
-                bitmap = null;
+document.getElementById('startBtn').onclick = () => {
+    if (!imgDataEncode) return alert("请先选择目标图");
+    
+    setProcessingState('startBtn', true, "开始加密");
+    const progressBar = document.getElementById('progressEncode');
+    progressBar.value = 0; 
+    progressBar.offsetWidth; 
+    
+    runEncode(
+        imgDataEncode, 
+        imgNameEncode, 
+        parseInt(document.getElementById('threadSelectEncode').value), 
+        document.getElementById('formatSelectEncode').value
+    );
+};
+
+function runEncode(imgData, baseName, threads, format) {
+    const progressBar = document.getElementById('progressEncode');
+    const w = imgData.width, h = imgData.height;
+    let resultA = new Uint8ClampedArray(w * h * 4);
+    let resultB = new Uint8ClampedArray(w * h * 4);
+    let processedRows = new Array(threads).fill(0);
+    let workersDone = 0;
+    const useGuided = document.getElementById('useGuided').checked && refImageData;
+    progressBar.value = 0;
+
+    // ======== 生成映射后的真实尺寸蒙版 ========
+    const maskPreviewData = overlayCtx.getImageData(0, 0, overlayCanvas.width, overlayCanvas.height).data;
+
+    function getPreviewDrawRect(imgW, imgH, previewW, previewH) {
+        let scale = Math.min(previewW / imgW, previewH / imgH);
+        let drawW = imgW * scale;
+        let drawH = imgH * scale;
+        let drawX = (previewW - drawW) / 2;
+        let drawY = (previewH - drawH) / 2;
+        return { drawX, drawY, drawW, drawH };
+    }
+
+    const { drawX, drawY, drawW, drawH } = getPreviewDrawRect(w, h, overlayCanvas.width, overlayCanvas.height);
+    const fullMask = new Uint8ClampedArray(w * h * 4);
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const px = drawX + (x / w) * drawW;
+            const py = drawY + (y / h) * drawH;
+
+            const ix = Math.floor(px);
+            const iy = Math.floor(py);
+
+            let alpha = 0;
+            if (ix >= 0 && iy >= 0 && ix < overlayCanvas.width && iy < overlayCanvas.height) {
+                alpha = maskPreviewData[(iy * overlayCanvas.width + ix) * 4 + 3];
             }
 
-            const drawAndScan = async () => {
-                try {
-                    setProgress("decode", 1, "读取图像像素…");
-                    await uiTick();
+            const idx = (y * w + x) * 4;
+            fullMask[idx + 3] = alpha;
+        }
+    }
+    // =======================================
 
-                    const canvas = document.createElement("canvas");
-                    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-                    let width, height;
+    requestAnimationFrame(function update() {
+        progressBar.value = Math.round((processedRows.reduce((a, b) => a + b, 0) / h) * 100);
+        if (workersDone < threads) requestAnimationFrame(update);
+    });
 
-                    if (bitmap) {
-                        width = canvas.width = bitmap.width;
-                        height = canvas.height = bitmap.height;
-                        ctx.imageSmoothingEnabled = false;
-                        ctx.drawImage(bitmap, 0, 0);
-                    } else {
-                        const img = new Image();
-                        img.src = url;
-                        await new Promise((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("图片加载失败")); });
-                        width = canvas.width = img.naturalWidth || img.width;
-                        height = canvas.height = img.naturalHeight || img.height;
-                        ctx.imageSmoothingEnabled = false;
-                        ctx.drawImage(img, 0, 0);
-                    }
+    const chunkSize = Math.ceil(h / threads);
+    for (let t = 0; t < threads; t++) {
+        const worker = new Worker(URL.createObjectURL(new Blob([encodeWorkerCode], { type: 'application/javascript' })));
+        worker.onmessage = e => {
+            if (e.data.rowsDone !== undefined) processedRows[t] = e.data.rowsDone;
+            if (e.data.done) {
+                const { A, B, startY, endY } = e.data;
+                for (let y = startY; y < endY; y++) {
+                    let rowIdx = y * w * 4, partRowIdx = (y - startY) * w * 4;
+                    resultA.set(A.slice(partRowIdx, partRowIdx + w * 4), rowIdx);
+                    resultB.set(B.slice(partRowIdx, partRowIdx + w * 4), rowIdx);
+                }
+                processedRows[t] = endY - startY;
+                workersDone++;
+                if (workersDone === threads) {
+                    console.log("w:", w, "h:", h);
+                    console.log("resultA.length:", resultA.length, "expected:", w * h * 4);
+                    console.log("resultB.length:", resultB.length, "expected:", w * h * 4);
 
-                    const imgData = ctx.getImageData(0, 0, width, height);
-                    const buf = imgData.data.buffer;
-
-                    worker.onmessage = async (ev) => {
-                        const m = ev.data || {};
-                        if (m.type === 'head') {
-                            const { qrSize, zippedLength } = m;
-                            if (zippedLength > 50 * 1024 * 1024) {
-                                const proceed = confirm(`⚠️ 数据大小为 ${formatBytes(zippedLength)}，可能加载缓慢或失败。\n是否仍要继续？`);
-                                worker.postMessage({ type: 'head-ack', proceed });
-                                if (!proceed) {
-                                    worker.terminate();
-                                    URL.revokeObjectURL(url);
-                                    cancel("用户取消了解码。");
-                                    if (button) { button.disabled = false; button.innerText = originalText; }
-                                    return;
-                                }
-                            } else {
-                                worker.postMessage({ type: 'head-ack', proceed: true });
+                    progressBar.value = 100;
+                
+                    const formatExt = format === "jpeg" ? "jpg" : format;
+                    const checkbox = document.getElementById('mergeSideBySide');
+                
+                    if (checkbox.checked) {
+                        // 拼接为单图导出
+                        let mergedWidth = w * 2;
+                        let mergedHeight = h;
+                        let mergedPixels = new Uint8ClampedArray(mergedWidth * mergedHeight * 4);
+                
+                        // 把 resultA 拷贝到左边
+                        for (let y = 0; y < h; y++) {
+                            for (let x = 0; x < w; x++) {
+                                const srcIdx = (y * w + x) * 4;
+                                const dstIdx = (y * mergedWidth + x) * 4;
+                                mergedPixels[dstIdx]     = resultA[srcIdx];
+                                mergedPixels[dstIdx + 1] = resultA[srcIdx + 1];
+                                mergedPixels[dstIdx + 2] = resultA[srcIdx + 2];
+                                mergedPixels[dstIdx + 3] = resultA[srcIdx + 3];
                             }
-                        } else if (m.type === 'retry') {
-                            // 可选：显示正在尝试下一个头的提示
-                            setProgress("decode", 12, m.reason || "尝试下一个文件头…");
-                        } else if (m.type === 'progress') {
-                            const p = 8 + Math.floor((m.got / m.total) * 62); // 8%~70%
-                            setProgress("decode", p, `扫描数据… (${m.got}/${m.total} 字节)`);
-                        } else if (m.type === 'error') {
-                            worker.terminate(); URL.revokeObjectURL(url);
-                            alert('提取失败：' + m.message);
-                            hideProgress("decode", "失败");
-                            if (button) { button.disabled = false; button.innerText = originalText; }
-                        } else if (m.type === 'cancelled') {
-                            worker.terminate(); URL.revokeObjectURL(url);
-                            cancel("用户取消了解码。");
-                            if (button) { button.disabled = false; button.innerText = originalText; }
-                        } else if (m.type === 'done') {
-                            worker.terminate(); URL.revokeObjectURL(url);
-
-                            const fullData = new Uint8Array(m.fullData);
-                            const checksum = fullData[0];
-                            const zippedData = fullData.slice(8);
-
-                            // Worker 已保证通过校验，这里不再二次确认
-                            setProgress("decode", 80, "解压中…");
-                            await uiTick();
-
-                            fflate.unzip(zippedData, async (err, files) => {
-                                if (err) {
-                                    alert('解压失败：' + (err.message || err));
-                                    hideProgress("decode", "失败");
-                                    if (button) { button.disabled = false; button.innerText = originalText; }
-                                    return;
-                                }
-
-                                const list = document.getElementById("fileList");
-                                list.innerHTML = "";
-
-                                const names = Object.keys(files);
-                                if (names.length === 0) {
-                                    list.textContent = "（解压成功，但压缩包为空）";
-                                    finish();
-                                    if (button) { button.disabled = false; button.innerText = originalText; }
-                                    return;
-                                }
-
-                                const totalSize = names.reduce((s, n) => s + (files[n]?.length || 0), 0);
-                                const summary = document.createElement("div");
-                                summary.style.textAlign = "center";
-                                summary.innerHTML = `📁 共 ${names.length} 个文件<br>📐 解压后大小：${formatBytes(totalSize)}<br><br>`;
-                                list.appendChild(summary);
-
-                                // 下载 ZIP
-                                const zipBlob = new Blob([zippedData], { type: "application/zip" });
-                                const zipA = document.createElement("a");
-                                zipA.href = URL.createObjectURL(zipBlob);
-                                zipA.download = "qr_extracted.zip";
-                                zipA.textContent = "📦 下载整个 ZIP";
-                                Object.assign(zipA.style, {
-                                    display: "inline-block", margin: "10px", padding: "10px",
-                                    background: "#1976d2", color: "#fff", borderRadius: "6px", textDecoration: "none"
-                                });
-                                zipA.onclick = () => setTimeout(() => URL.revokeObjectURL(zipA.href), 2000);
-
-                                // 分开下载（分批）
-                                const splitBtn = document.createElement("button");
-                                splitBtn.textContent = "📂 分开下载全部文件";
-                                Object.assign(splitBtn.style, {
-                                    margin: "10px", padding: "10px", background: "#43a047",
-                                    color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer"
-                                });
-                                splitBtn.onclick = async () => {
-                                    const batch = 10;
-                                    for (let i = 0; i < names.length; i += batch) {
-                                        const slice = names.slice(i, i + batch);
-                                        setProgress("decode", 96, `逐个下载… (${Math.min(i + batch, names.length)}/${names.length})`);
-                                        for (const name of slice) {
-                                            const blob = new Blob([files[name]]);
-                                            const a = document.createElement("a");
-                                            a.href = URL.createObjectURL(blob);
-                                            a.download = name;
-                                            a.style.display = "none";
-                                            document.body.appendChild(a);
-                                            a.click();
-                                            document.body.removeChild(a);
-                                            setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-                                        }
-                                        await uiTick();
-                                    }
-                                    finish();
-                                    if (button) { button.disabled = false; button.innerText = originalText; }
-                                };
-
-                                list.appendChild(zipA);
-                                list.appendChild(splitBtn);
-                                finish();
-                                if (button) { button.disabled = false; button.innerText = originalText; }
-                            });
                         }
-                    };
-
-                    setProgress("decode", 8, "扫描二维码数据…");
-                    worker.postMessage({ type: 'scan', width, height, pixelsBuf: buf }, [buf]);
-                } catch (err) {
-                    alert(`提取失败：${err.message}`);
-                    hideProgress("decode", "失败");
-                    try { worker.terminate(); } catch { }
-                    URL.revokeObjectURL(url);
-                    if (button) { button.disabled = false; button.innerText = originalText; }
-                }
-            };
-
-            await drawAndScan();
-        }
-
-        // 辅助：字节转友好单位
-        function formatBytes(n) {
-            if (!Number.isFinite(n)) return n + " B";
-            const units = ["B", "KB", "MB", "GB"];
-            let i = 0;
-            while (n >= 1024 && i < units.length - 1) {
-                n /= 1024;
-                i++;
-            }
-            return n.toFixed(n < 10 && i > 0 ? 1 : 0) + " " + units[i];
-        }
-
-        window.onload = () => {
-            const status = document.getElementById("status");
-            const loaded = typeof fflate !== "undefined" && typeof QRCode !== "undefined";
-
-            if (loaded) {
-                status.textContent = "🟢 所有依赖加载成功，可断网使用";
-                status.style.color = "limegreen";
-            } else {
-                status.textContent = "🔴 依赖加载失败，请检查网络连接";
-                status.style.color = "red";
-            }
-
-            // 控制附加描述图片和描述的显示
-            document.getElementById("extraInfoToggle").onchange = (e) => {
-                document.getElementById("extraInfoContainer").style.display = e.target.checked ? "block" : "none";
-            };
-
-            // 文件名显示：上传文件组
-            const filesInput = document.getElementById("filesInput");
-            filesInput.onchange = () => {
-                const files = [...filesInput.files];
-                const count = files.length;
-
-                let displayText = "未选择任何文件";
-                if (count === 1) {
-                    displayText = `${files[0].name}（共 1 个文件）`;
-                } else if (count === 2) {
-                    displayText = `${files[0].name}, ${files[1].name}（共 2 个文件）`;
-                } else if (count > 2) {
-                    displayText = `${files[0].name}, ${files[1].name} 等 ${count} 个文件`;
+                
+                        // 把 resultB 拷贝到右边
+                        for (let y = 0; y < h; y++) {
+                            for (let x = 0; x < w; x++) {
+                                const srcIdx = (y * w + x) * 4;
+                                const dstIdx = (y * mergedWidth + (x + w)) * 4;
+                                mergedPixels[dstIdx]     = resultB[srcIdx];
+                                mergedPixels[dstIdx + 1] = resultB[srcIdx + 1];
+                                mergedPixels[dstIdx + 2] = resultB[srcIdx + 2];
+                                mergedPixels[dstIdx + 3] = resultB[srcIdx + 3];
+                            }
+                        }
+                
+                        // 使用已有 saveImage 函数导出
+                        saveImage(mergedPixels, mergedWidth, mergedHeight, baseName + "_diff." + formatExt, format);
+                
+                        setProcessingState('startBtn', false, "开始加密");
+                        alert(`生成成功：\n${baseName}_diff.${formatExt}\n\n要还原原图，请在 Photoshop 等程序中将图片左右分割为两个相等的图层（不完全相等也能还原，只是边上会是乱码），将在上面那张设置为“差值（Difference）”模式，移动至完全重叠或能清晰看到原图。`);
+                    } else {
+                        // 分别导出 A 和 B
+                        saveImage(resultA, w, h, baseName + "_A_diff." + formatExt, format);
+                        saveImage(resultB, w, h, baseName + "_B_diff." + formatExt, format);
+                
+                        setProcessingState('startBtn', false, "开始加密");
+                        alert(`生成成功：\n${baseName}_A_diff.${formatExt}\n${baseName}_B_diff.${formatExt}\n\n要还原原图，请在 Photoshop 等程序中将两张图片导入为两张图层（无论上下），并将在上面那张设置为“差值（Difference）”模式。`);
+                    }
                 }
 
-                document.getElementById("filesInputName").textContent = displayText;
-            };
-
-
-            const imageInputName = document.getElementById("imageInputName");
-            const imageInput = document.getElementById("imageInput");
-
-            // 选择后更新文件名
-            imageInput.onchange = () => {
-                const name = imageInput.files[0]?.name || "未选择任何图片";
-                imageInputName.textContent = name;
-            };
-
-            const previewName = document.getElementById("previewImageName");
-            const previewInput = document.getElementById("previewImageInput");
-            const clearBtn = document.getElementById("clearPreviewImageButton");
-
-            // 选择后更新文件名
-            previewInput.onchange = () => {
-                const name = previewInput.files[0]?.name || "未选择任何图片";
-                previewName.textContent = name;
-            };
-
-            // 清除按钮：直接把 value 置空
-            clearBtn.onclick = () => {
-                const input = document.getElementById("previewImageInput"); // 每次现取，避免拿到旧引用
-                if (!input) return;
-
-                input.value = ""; // 清空选择
-                previewName.textContent = "未选择任何图片";
-            };
+            }
         };
+        worker.postMessage({
+            startY: t * chunkSize,
+            endY: Math.min((t + 1) * chunkSize, h),
+            w, h,
+            data: imgData.data,
+            useGuided,
+            refData: useGuided ? refImageData.data : null,
+            maskData: fullMask // 传入映射后的真实尺寸蒙版
+        });
+    }
+}
 
-        function setProgress(kind, pct, text) {
-            const wrap = document.getElementById(kind + "ProgressWrap");
-            const bar = document.getElementById(kind + "ProgressBar");
-            const lbl = document.getElementById(kind + "ProgressText");
-            if (!wrap || !bar || !lbl) return;
-            wrap.style.display = "block";
-            bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
-            if (text) lbl.textContent = text;
-        }
-        function hideProgress(kind, finalText) {
-            const wrap = document.getElementById(kind + "ProgressWrap");
-            const bar = document.getElementById(kind + "ProgressBar");
-            const lbl = document.getElementById(kind + "ProgressText");
-            if (!wrap) return;
-            if (finalText && lbl) lbl.textContent = finalText;
-            if (bar) bar.style.width = "100%";
-            setTimeout(() => { wrap.style.display = "none"; }, 500);
-        }
-        function uiTick() { return new Promise(r => setTimeout(r)); }
-        function formatBytes(n) {
-            if (!Number.isFinite(n)) return n + " B";
-            const units = ["B", "KB", "MB", "GB", "TB"];
-            let i = 0, v = n;
-            while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-            return v.toFixed(v < 10 && i > 0 ? 1 : 0) + " " + units[i];
-        }
+// ===== 解密逻辑 =====
+const ctxA = document.getElementById('previewDecodeA').getContext('2d');
+const ctxB = document.getElementById('previewDecodeB').getContext('2d');
+let imgA = null, imgB = null;
+drawPlaceholder(ctxA, 200, 150, "选择或拖入第一张图");
+drawPlaceholder(ctxB, 200, 150, "选择或拖入第二张图");
 
-    </script>
+document.getElementById('chooseDecodeA').onclick = () => document.getElementById('decodeInputA').click();
+document.getElementById('chooseDecodeB').onclick = () => document.getElementById('decodeInputB').click();
+document.getElementById('decodeInputA').onchange = e => { if (e.target.files[0]) loadDecodeImage(e.target.files[0], 'A'); };
+document.getElementById('decodeInputB').onchange = e => { if (e.target.files[0]) loadDecodeImage(e.target.files[0], 'B'); };
+
+function loadDecodeImage(file, type) {
+    const reader = new FileReader();
+    reader.onload = ev => {
+        const img = new Image();
+        img.onload = () => {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = img.width; tempCanvas.height = img.height;
+            tempCanvas.getContext('2d').drawImage(img, 0, 0);
+            if (type === 'A') {
+                imgA = tempCanvas.getContext('2d').getImageData(0, 0, img.width, img.height);
+                drawImageContain(ctxA, document.getElementById('previewDecodeA'), img);
+            } else {
+                imgB = tempCanvas.getContext('2d').getImageData(0, 0, img.width, img.height);
+                drawImageContain(ctxB, document.getElementById('previewDecodeB'), img);
+            }
+
+        };
+        img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+const decodeWorkerCode = `onmessage = function(e) {
+    const { startY, endY, w, h, dataA, dataB } = e.data;
+    let out = new Uint8ClampedArray((endY - startY) * w * 4);
+    for (let y = startY; y < endY; y++) {
+        for (let x = 0; x < w; x++) {
+            let idx = ((y - startY) * w + x) * 4;
+            let idxSrc = (y * w + x) * 4;
+            out[idx]   = Math.abs(dataA[idxSrc]   - dataB[idxSrc]);
+            out[idx+1] = Math.abs(dataA[idxSrc+1] - dataB[idxSrc+1]);
+            out[idx+2] = Math.abs(dataA[idxSrc+2] - dataB[idxSrc+2]);
+            out[idx+3] = 255;
+        }
+        if ((y - startY) % 50 === 0) postMessage({ rowsDone: y - startY + 1 });
+    }
+    postMessage({ done: true, out, startY, endY });
+}`;
+
+function splitImageData(imageData, leftSide = true) {
+    const { width, height, data } = imageData;
+    const halfWidth = Math.floor(width / 2);
+    const result = new Uint8ClampedArray(halfWidth * height * 4);
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < halfWidth; x++) {
+            const srcX = leftSide ? x : x + halfWidth;
+            const srcIdx = (y * width + srcX) * 4;
+            const dstIdx = (y * halfWidth + x) * 4;
+            result[dstIdx] = data[srcIdx];
+            result[dstIdx + 1] = data[srcIdx + 1];
+            result[dstIdx + 2] = data[srcIdx + 2];
+            result[dstIdx + 3] = data[srcIdx + 3];
+        }
+    }
+
+    return new ImageData(result, halfWidth, height);
+}
+
+document.getElementById('startDecode').onclick = () => {
+    if (!imgA && !imgB) {
+        return alert("请至少选择一张图片");
+    }
+
+    let inputA = imgA;
+    let inputB = imgB;
+
+    // 如果只有一张图，使用左右拆分
+    if (imgA && !imgB) {
+        inputA = splitImageData(imgA, true);
+        inputB = splitImageData(imgA, false);
+    } else if (!imgA && imgB) {
+        inputA = splitImageData(imgB, true);
+        inputB = splitImageData(imgB, false);
+    }
+
+    setProcessingState('startDecode', true, "开始解密");
+    const progressBar = document.getElementById('progressDecode');
+    progressBar.value = 0;
+    progressBar.offsetWidth;
+
+    runDecode(
+        inputA,
+        inputB,
+        parseInt(document.getElementById('threadSelectDecode').value),
+        document.getElementById('formatSelectDecode').value
+    );
+};
+
+function runDecode(imgA, imgB, threads, format) {
+    const progressBar = document.getElementById('progressDecode');
+    const w = imgA.width, h = imgA.height;
+    let resultOut = new Uint8ClampedArray(w * h * 4);
+    let processedRows = new Array(threads).fill(0);
+    let workersDone = 0;
+    progressBar.value = 0;
+    requestAnimationFrame(function update() {
+        progressBar.value = Math.round((processedRows.reduce((a,b)=>a+b,0) / h) * 100);
+        if (workersDone < threads) requestAnimationFrame(update);
+    });
+    const chunkSize = Math.ceil(h / threads);
+    for (let t = 0; t < threads; t++) {
+        const worker = new Worker(URL.createObjectURL(new Blob([decodeWorkerCode], { type: 'application/javascript' })));
+        worker.onmessage = e => {
+            if (e.data.rowsDone !== undefined) processedRows[t] = e.data.rowsDone;
+            if (e.data.done) {
+                const { out, startY, endY } = e.data;
+                for (let y = startY; y < endY; y++) {
+                    let rowIdx = y * w * 4, partRowIdx = (y - startY) * w * 4;
+                    resultOut.set(out.slice(partRowIdx, partRowIdx + w * 4), rowIdx);
+                }
+                processedRows[t] = endY - startY;
+                workersDone++;
+                if (workersDone === threads) {
+                    progressBar.value = 100;
+                    saveImage(resultOut, w, h, "decoded." + (format==="jpeg"?"jpg":format), format);
+                    setProcessingState('startDecode', false, "开始解密");
+                }
+            }
+        };
+        worker.postMessage({ startY: t*chunkSize, endY: Math.min((t+1)*chunkSize,h), w, h, dataA: imgA.data, dataB: imgB.data });
+    }
+}
+
+// ===== 保存通用 =====
+function saveImage(pixels, w, h, filename, format) {
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = w; outCanvas.height = h;
+    const outCtx = outCanvas.getContext('2d');
+    outCtx.putImageData(new ImageData(pixels, w, h), 0, 0);
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = outCanvas.toDataURL("image/" + format);
+    link.click();
+}
+</script>
+
 </body>
-
 </html>
